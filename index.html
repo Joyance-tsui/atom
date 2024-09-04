@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量子力学原子模型</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+        }
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        #controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+        #elementMenu {
+            display: none;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+        #menuToggle {
+            cursor: pointer;
+            font-size: 24px;
+            color: #333;
+        }
+        button, select {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover, select:hover {
+            background-color: #45a049;
+        }
+        select {
+            width: 100%;
+        }
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            color: #333;
+            font-weight: bold;
+        }
+        .control-group {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 15px;
+        }
+        .control-group:last-child {
+            border-bottom: none;
+        }
+        h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="controls">
+        <div id="menuToggle">☰</div>
+        <div id="elementMenu">
+            <h3>量子力学原子模型控制面板</h3>
+            <div class="control-group">
+                <label for="elementSelect">选择元素</label>
+                <select id="elementSelect"></select>
+            </div>
+            <div class="control-group">
+                <label for="electronColor">电子颜色</label>
+                <input type="color" id="electronColor" value="#00FFFF">
+                <label for="protonColor">质子颜色</label>
+                <input type="color" id="protonColor" value="#FF0000">
+                <label for="neutronColor">中子颜色</label>
+                <input type="color" id="neutronColor" value="#0000FF">
+            </div>
+            <div class="control-group">
+                <label for="nucleusSize">原子核大小</label>
+                <input type="range" id="nucleusSize" min="5" max="50" value="20">
+                <label for="electronSize">电子大小</label>
+                <input type="range" id="electronSize" min="1" max="10" value="3">
+                <label for="orbitSize">轨道大小</label>
+                <input type="range" id="orbitSize" min="50" max="200" value="100">
+                <label for="scale">整体比例</label>
+                <input type="range" id="scale" min="0.5" max="2" step="0.1" value="1">
+            </div>
+            <button id="resetButton">重置</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const elements = [
+            {name: "氢", protons: 1, neutrons: 0, electrons: 1},
+            {name: "氦", protons: 2, neutrons: 2, electrons: 2},
+            {name: "锂", protons: 3, neutrons: 4, electrons: 3},
+            {name: "铍", protons: 4, neutrons: 5, electrons: 4},
+            {name: "硼", protons: 5, neutrons: 6, electrons: 5},
+            {name: "碳", protons: 6, neutrons: 6, electrons: 6},
+            {name: "氮", protons: 7, neutrons: 7, electrons: 7},
+            {name: "氧", protons: 8, neutrons: 8, electrons: 8},
+            {name: "氟", protons: 9, neutrons: 10, electrons: 9},
+            {name: "氖", protons: 10, neutrons: 10, electrons: 10}
+        ];
+
+        let scene, camera, renderer, nucleus, electrons = [], trails = [], nucleusGroup;
+        let currentElement = elements[0];
+        let nucleusSize = 20, electronSize = 3, orbitSize = 100, scale = 1;
+        let electronColor = new THREE.Color(0x00FFFF);
+        let protonColor = new THREE.Color(0xFF0000);
+        let neutronColor = new THREE.Color(0x0000FF);
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 200;
+
+            renderer = new THREE.WebGLRenderer({canvas: document.getElementById('canvas'), antialias: true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            createAtom();
+
+            animate();
+        }
+
+        function createAtom() {
+            // 清除现有的原子
+            while(scene.children.length > 0){ 
+                scene.remove(scene.children[0]); 
+            }
+            electrons = [];
+            trails = [];
+
+            // 创建原子核组
+            nucleusGroup = new THREE.Group();
+            scene.add(nucleusGroup);
+
+            // 创建原子核
+            const particleGeometry = new THREE.SphereGeometry(nucleusSize / 2, 32, 32);
+            const protonMaterial = new THREE.MeshPhongMaterial({color: protonColor});
+            const neutronMaterial = new THREE.MeshPhongMaterial({color: neutronColor});
+
+            for (let i = 0; i < currentElement.protons + currentElement.neutrons; i++) {
+                const isProton = i < currentElement.protons;
+                const particle = new THREE.Mesh(particleGeometry, isProton ? protonMaterial : neutronMaterial);
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = nucleusSize / 2 * Math.cbrt(Math.random());
+                particle.position.set(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                );
+                nucleusGroup.add(particle);
+            }
+
+            // 创建电子
+            const electronGeometry = new THREE.SphereGeometry(electronSize, 32, 32);
+            const electronMaterial = new THREE.MeshPhongMaterial({color: electronColor});
+
+            for (let i = 0; i < currentElement.electrons; i++) {
+                const electron = new THREE.Mesh(electronGeometry, electronMaterial);
+                
+                // 为每个电子创建一个随机的轨道平面
+                const orbitPlane = new THREE.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    Math.random() - 0.5
+                ).normalize();
+
+                // 创建一个垂直于轨道平面的向量
+                const perpVector = new THREE.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    Math.random() - 0.5
+                ).normalize();
+                perpVector.cross(orbitPlane);
+
+                // 设置初始位置
+                const angle = Math.random() * Math.PI * 2;
+                const radius = orbitSize * (0.8 + Math.random() * 0.4); // 轨道半径变化
+                electron.position.copy(orbitPlane).multiplyScalar(radius * Math.cos(angle));
+                electron.position.add(perpVector.clone().multiplyScalar(radius * Math.sin(angle)));
+
+                scene.add(electron);
+                electrons.push({
+                    mesh: electron,
+                    orbitPlane: orbitPlane,
+                    perpVector: perpVector,
+                    angle: angle,
+                    speed: 0.02 + Math.random() * 0.03, // 随机速度
+                    radius: radius,
+                    lastJump: 0 // 上次跃迁的时间
+                });
+
+                // 为每个电子创建轨迹
+                const trailMaterial = new THREE.MeshBasicMaterial({
+                    color: electronColor,
+                    transparent: true,
+                    opacity: 0.5
+                });
+                const trail = new THREE.Mesh(new THREE.BufferGeometry(), trailMaterial);
+                scene.add(trail);
+                trails.push({mesh: trail, positions: []});
+            }
+
+            // 添加光源
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // 应用缩放
+            applyScale();
+        }
+
+        function applyScale() {
+            nucleusGroup.scale.set(scale, scale, scale);
+            electrons.forEach(electron => {
+                electron.mesh.scale.set(scale, scale, scale);
+                electron.mesh.position.multiplyScalar(scale);
+            });
+            trails.forEach(trail => {
+                trail.mesh.scale.set(scale, scale, scale);
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 旋转原子核
+            nucleusGroup.rotation.x += 0.01;
+            nucleusGroup.rotation.y += 0.01;
+
+            // 移动电子并更新轨迹
+            electrons.forEach((electron, index) => {
+                electron.angle += electron.speed;
+                
+                // 随机轨道跃迁
+                if (Math.random() < 0.001 && Date.now() - electron.lastJump > 2000) { // 平均每1000帧有1次跃迁机会，且距离上次跃迁至少2秒
+                    electron.radius = orbitSize * (0.8 + Math.random() * 0.4);
+                    electron.lastJump = Date.now();
+                }
+
+                electron.mesh.position.copy(electron.orbitPlane).multiplyScalar(electron.radius * scale * Math.cos(electron.angle));
+                electron.mesh.position.add(electron.perpVector.clone().multiplyScalar(electron.radius * scale * Math.sin(electron.angle)));
+
+                // 添加一些随机性
+                electron.mesh.position.add(new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                ));
+
+                const trail = trails[index];
+                trail.positions.unshift(electron.mesh.position.clone());
+                if (trail.positions.length > 50) {
+                    trail.positions.pop();
+                }
+
+                updateTrail(trail, electron.mesh);
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        function updateTrail(trail, electron) {
+            const positions = [];
+            const colors = [];
+            const indices = [];
+
+            for (let i = 0; i < trail.positions.length - 1; i++) {
+                const current = trail.positions[i];
+                const next = trail.positions[i + 1];
+
+                const direction = next.clone().sub(current).normalize();
+                const perpendicular = new THREE.Vector3(-direction.y, direction.x, 0).normalize();
+
+                const width = electronSize * scale * (1 - i / trail.positions.length);
+
+                positions.push(
+                    current.x + perpendicular.x * width, current.y + perpendicular.y * width, current.z + perpendicular.z * width,
+                    current.x - perpendicular.x * width, current.y - perpendicular.y * width, current.z - perpendicular.z * width
+                );
+
+                const alpha = 1 - i / trail.positions.length;
+                colors.push(
+                    electronColor.r, electronColor.g, electronColor.b, alpha,
+                    electronColor.r, electronColor.g, electronColor.b, alpha
+                );
+
+                if (i < trail.positions.length - 2) {
+                    const vertexIndex = i * 2;
+                    indices.push(
+                        vertexIndex, vertexIndex + 1, vertexIndex + 2,
+                        vertexIndex + 1, vertexIndex + 3, vertexIndex + 2
+                    );
+                }
+            }
+
+            trail.mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            trail.mesh.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+            trail.mesh.geometry.setIndex(indices);
+            trail.mesh.geometry.attributes.position.needsUpdate = true;
+            trail.mesh.geometry.attributes.color.needsUpdate = true;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+
+        // 初始化控件
+        const elementSelect = document.getElementById('elementSelect');
+        elements.forEach((element, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = element.name;
+            elementSelect.appendChild(option);
+        });
+
+        elementSelect.addEventListener('change', (event) => {
+            currentElement = elements[event.target.value];
+            createAtom();
+        });
+
+        document.getElementById('electronColor').addEventListener('input', (event) => {
+            electronColor = new THREE.Color(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('protonColor').addEventListener('input', (event) => {
+            protonColor = new THREE.Color(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('neutronColor').addEventListener('input', (event) => {
+            neutronColor = new THREE.Color(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('nucleusSize').addEventListener('input', (event) => {
+            nucleusSize = parseInt(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('electronSize').addEventListener('input', (event) => {
+            electronSize = parseInt(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('orbitSize').addEventListener('input', (event) => {
+            orbitSize = parseInt(event.target.value);
+            createAtom();
+        });
+
+        document.getElementById('scale').addEventListener('input', (event) => {
+            scale = parseFloat(event.target.value);
+            applyScale();
+        });
+
+        document.getElementById('resetButton').addEventListener('click', () => {
+            location.reload();
+        });
+
+        document.getElementById('menuToggle').addEventListener('click', () => {
+            const menu = document.getElementById('elementMenu');
+            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        });
+
+        init();
+    </script>
+</body>
+</html>
